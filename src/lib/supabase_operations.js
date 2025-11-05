@@ -59,6 +59,16 @@ export async function stockOut(item_id, company_id, qty, reason) {
   return supabase.rpc('stock_out', { p_item: item_id, p_company: company_id, p_qty: qty, p_reason: reason });
 }
 
+export async function listRecentStockMovements({ type = 'OUT', limit = 10 } = {}) {
+  await ensureClient();
+  return supabase
+    .from('stock_movements')
+    .select('id,movement_type,quantity,reason,created_at,item:items(name),company:companies(name)')
+    .eq('movement_type', type)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
+
 export async function getSalesBetweenDates(fromIso, toIso) {
   await ensureClient();
   // fetch stock_movements of type OUT with related item names
@@ -94,6 +104,7 @@ const ops = {
   createItem,
   stockIn,
   stockOut,
+  listRecentStockMovements,
   getSalesBetweenDates,
 };
 
