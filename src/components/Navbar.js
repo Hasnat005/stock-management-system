@@ -71,6 +71,7 @@ function DesktopDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
+  const hoverTimeoutRef = useRef(null);
 
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -88,16 +89,41 @@ function DesktopDropdown({
     };
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const openDropdown = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setOpen(true);
+  };
+
+  const scheduleClose = () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setOpen(false);
+      hoverTimeoutRef.current = null;
+    }, 180);
+  };
+
   return (
     <div
       ref={containerRef}
       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocusCapture={() => setOpen(true)}
+      onMouseEnter={openDropdown}
+      onMouseLeave={scheduleClose}
+      onFocusCapture={openDropdown}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
-          setOpen(false);
+          scheduleClose();
         }
       }}
     >
@@ -107,7 +133,13 @@ function DesktopDropdown({
         className={`group ${baseLinkClass} text-slate-200 hover:text-white hover:bg-white/10 ${
           open ? "bg-white/10 text-white" : ""
         } ${buttonClassName}`}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setOpen((prev) => !prev);
+        }}
       >
         <span className="flex items-center gap-2">
           <span>{label}</span>
@@ -136,6 +168,10 @@ function DesktopDropdown({
                   href={link.href}
                   onClick={() => {
                     setOpen(false);
+                    if (hoverTimeoutRef.current) {
+                      clearTimeout(hoverTimeoutRef.current);
+                      hoverTimeoutRef.current = null;
+                    }
                     onNavigate?.();
                   }}
                   className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all ${
@@ -266,7 +302,7 @@ function UserMenu({ user, onSignOut, signingOut }) {
         aria-expanded={open}
         className="group flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-2 py-1.5 text-left text-sm font-semibold text-slate-100 transition-all hover:border-blue-400/40 hover:bg-blue-500/10"
       >
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-blue-400 text-base font-bold text-white shadow-inner shadow-blue-900/40">
+  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-blue-600 to-blue-400 text-base font-bold text-white shadow-inner shadow-blue-900/40">
           {initials}
         </span>
         <span className="hidden sm:flex flex-col items-start leading-tight">
@@ -342,7 +378,7 @@ export default function Navbar() {
   const manageLinks = MANAGE_LINKS;
 
   return (
-    <nav className="border-b border-white/5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-slate-200 shadow-lg shadow-blue-900/20">
+  <nav className="border-b border-white/5 bg-linear-to-r from-slate-950 via-slate-900 to-slate-950 text-slate-200 shadow-lg shadow-blue-900/20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-20 items-center justify-between">
           <div className="flex items-center gap-8">
