@@ -378,7 +378,7 @@ export default function Navbar() {
   const manageLinks = MANAGE_LINKS;
 
   return (
-  <nav className="border-b border-white/5 bg-linear-to-r from-slate-950 via-slate-900 to-slate-950 text-slate-200 shadow-lg shadow-blue-900/20">
+  <nav className="border-b border-white/5 bg-linear-to-r from-[#050b1f] via-[#0d1735] to-[#132960] text-slate-200 shadow-lg shadow-blue-900/25 backdrop-blur-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-20 items-center justify-between">
           <div className="flex items-center gap-8">
@@ -387,15 +387,19 @@ export default function Navbar() {
               className="flex items-center gap-3 text-lg font-semibold tracking-tight text-slate-100 transition-all hover:text-white"
               onClick={closeMenu}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-blue-300 shadow-inner shadow-blue-900/40">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-linear-to-br from-blue-600/80 to-indigo-500/80 text-blue-100 shadow-inner shadow-blue-900/40">
                 <Sparkles className="h-6 w-6" aria-hidden="true" />
               </span>
-              <span className="flex flex-col leading-tight">
-                <span className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-200/80">
+              <span className="flex flex-col items-start leading-tight text-left">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.5em] text-blue-200/80">
                   Stock
                 </span>
-                <span className="text-xl font-bold text-white">
-                  Management <span className="font-medium text-blue-200/80">System</span>
+                <span className="mt-2 flex items-center gap-3 text-xl">
+                  <span className="inline-flex items-center gap-2 font-bold text-white">
+                    Management
+                    <span className="h-0.5 w-8 rounded-full bg-blue-400/80" aria-hidden="true" />
+                  </span>
+                  <span className="font-light text-slate-300">System</span>
                 </span>
               </span>
             </Link>
