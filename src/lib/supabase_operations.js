@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { executeWithOfflineSupport } from './offlineQueue';
 
 async function ensureClient() {
   if (!supabase) throw new Error('Supabase client is not configured. Check your .env.local');
@@ -41,21 +42,27 @@ export async function listCategories({ userId }) {
 export async function createCategory({ name, userId }) {
   await ensureClient();
   assertUserId(userId);
-  const response = await supabase.from('categories').insert([{ name, user_id: userId }]);
-  if (response.error && isMissingUserColumn(response.error)) {
-    return supabase.from('categories').insert([{ name }]);
-  }
-  return response;
+  const action = async () => {
+    const response = await supabase.from('categories').insert([{ name, user_id: userId }]);
+    if (response.error && isMissingUserColumn(response.error)) {
+      return supabase.from('categories').insert([{ name }]);
+    }
+    return response;
+  };
+  return executeWithOfflineSupport(action, { description: 'Create category' });
 }
 
 export async function updateCategory({ id, name, userId }) {
   await ensureClient();
   assertUserId(userId);
-  const response = await supabase.from('categories').update({ name }).eq('id', id).eq('user_id', userId);
-  if (response.error && isMissingUserColumn(response.error)) {
-    return supabase.from('categories').update({ name }).eq('id', id);
-  }
-  return response;
+  const action = async () => {
+    const response = await supabase.from('categories').update({ name }).eq('id', id).eq('user_id', userId);
+    if (response.error && isMissingUserColumn(response.error)) {
+      return supabase.from('categories').update({ name }).eq('id', id);
+    }
+    return response;
+  };
+  return executeWithOfflineSupport(action, { description: 'Update category' });
 }
 
 export async function listCompanies({ userId }) {
@@ -82,11 +89,14 @@ export async function listCompanies({ userId }) {
 export async function createCompany({ name, userId }) {
   await ensureClient();
   assertUserId(userId);
-  const response = await supabase.from('companies').insert([{ name, user_id: userId }]);
-  if (response.error && isMissingUserColumn(response.error)) {
-    return supabase.from('companies').insert([{ name }]);
-  }
-  return response;
+  const action = async () => {
+    const response = await supabase.from('companies').insert([{ name, user_id: userId }]);
+    if (response.error && isMissingUserColumn(response.error)) {
+      return supabase.from('companies').insert([{ name }]);
+    }
+    return response;
+  };
+  return executeWithOfflineSupport(action, { description: 'Create company' });
 }
 
 export async function listItems({ userId, filters = {} } = {}) {
@@ -126,16 +136,19 @@ export async function createItem({ name, quantity, price, category_id, company_i
     user_id: userId,
   };
 
-  const response = await supabase.from('items').insert([
-    {
-      ...basePayload,
-    },
-  ]);
-  if (response.error && isMissingUserColumn(response.error)) {
-    const { user_id, ...fallbackPayload } = basePayload;
-    return supabase.from('items').insert([fallbackPayload]);
-  }
-  return response;
+  const action = async () => {
+    const response = await supabase.from('items').insert([
+      {
+        ...basePayload,
+      },
+    ]);
+    if (response.error && isMissingUserColumn(response.error)) {
+      const { user_id, ...fallbackPayload } = basePayload;
+      return supabase.from('items').insert([fallbackPayload]);
+    }
+    return response;
+  };
+  return executeWithOfflineSupport(action, { description: 'Create item' });
 }
 
 export async function updateItem({ id, changes, userId }) {
@@ -143,74 +156,88 @@ export async function updateItem({ id, changes, userId }) {
   assertUserId(userId);
 
   const payload = { ...changes };
-  const response = await supabase
-    .from('items')
-    .update(payload)
-    .eq('id', id)
-    .eq('user_id', userId);
+  const action = async () => {
+    const response = await supabase
+      .from('items')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId);
 
-  if (response.error && isMissingUserColumn(response.error)) {
-    return supabase.from('items').update(payload).eq('id', id);
-  }
+    if (response.error && isMissingUserColumn(response.error)) {
+      return supabase.from('items').update(payload).eq('id', id);
+    }
 
-  return response;
+    return response;
+  };
+
+  return executeWithOfflineSupport(action, { description: 'Update item' });
 }
 
 export async function deleteItem({ id, userId }) {
   await ensureClient();
   assertUserId(userId);
 
-  const response = await supabase
-    .from('items')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', userId);
+  const action = async () => {
+    const response = await supabase
+      .from('items')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
 
-  if (response.error && isMissingUserColumn(response.error)) {
-    return supabase.from('items').delete().eq('id', id);
-  }
+    if (response.error && isMissingUserColumn(response.error)) {
+      return supabase.from('items').delete().eq('id', id);
+    }
 
-  return response;
+    return response;
+  };
+
+  return executeWithOfflineSupport(action, { description: 'Delete item' });
 }
 
 export async function stockIn({ itemId, companyId, quantity, userId }) {
   await ensureClient();
   assertUserId(userId);
-  const result = await supabase.rpc('stock_in', {
-    p_item: itemId,
-    p_company: companyId,
-    p_qty: quantity,
-    p_user: userId,
-  });
-  if (result.error && /p_user/i.test(result.error.message || '')) {
-    return supabase.rpc('stock_in', {
+  const action = async () => {
+    const result = await supabase.rpc('stock_in', {
       p_item: itemId,
       p_company: companyId,
       p_qty: quantity,
+      p_user: userId,
     });
-  }
-  return result;
+    if (result.error && /p_user/i.test(result.error.message || '')) {
+      return supabase.rpc('stock_in', {
+        p_item: itemId,
+        p_company: companyId,
+        p_qty: quantity,
+      });
+    }
+    return result;
+  };
+  return executeWithOfflineSupport(action, { description: 'Stock in item' });
 }
 
 export async function stockOut({ itemId, companyId, quantity, reason, userId }) {
   await ensureClient();
   assertUserId(userId);
-  const result = await supabase.rpc('stock_out', {
-    p_item: itemId,
-    p_company: companyId,
-    p_qty: quantity,
-    p_reason: reason,
-    p_user: userId,
-  });
-  if (result.error && /p_user/i.test(result.error.message || '')) {
-    return supabase.rpc('stock_out', {
+  const action = async () => {
+    const result = await supabase.rpc('stock_out', {
       p_item: itemId,
       p_company: companyId,
       p_qty: quantity,
       p_reason: reason,
+      p_user: userId,
     });
-  }
-  return result;
+    if (result.error && /p_user/i.test(result.error.message || '')) {
+      return supabase.rpc('stock_out', {
+        p_item: itemId,
+        p_company: companyId,
+        p_qty: quantity,
+        p_reason: reason,
+      });
+    }
+    return result;
+  };
+  return executeWithOfflineSupport(action, { description: 'Stock out item' });
 }
 
 export async function listRecentStockMovements({ type = 'OUT', limit = 10, userId } = {}) {

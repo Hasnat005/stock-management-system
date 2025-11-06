@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '../../components/ToastProvider';
 import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
@@ -9,20 +10,10 @@ export default function CompaniesPage() {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
-  const [feedback, setFeedback] = useState(null);
-
   const mountedRef = useRef(true);
-  const feedbackTimeoutRef = useRef(null);
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-
-  const setFeedbackMessage = useCallback((message) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setFeedback(null);
-    }, 3200);
-  }, []);
+  const { addToast } = useToast();
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -35,12 +26,16 @@ export default function CompaniesPage() {
     } catch (err) {
       console.error('Failed to load companies', err);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to load companies right now. Please retry.' });
+        addToast({
+          title: 'Load failed',
+          description: 'Unable to load companies right now. Please retry.',
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setListLoading(false);
     }
-  }, [setFeedbackMessage, userId]);
+  }, [addToast, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -49,7 +44,6 @@ export default function CompaniesPage() {
     }
     return () => {
       mountedRef.current = false;
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
   }, [authLoading, load]);
 
@@ -57,23 +51,37 @@ export default function CompaniesPage() {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
-      setFeedbackMessage({ type: 'error', message: 'Company name cannot be empty.' });
+      addToast({
+        title: 'Name required',
+        description: 'Company name cannot be empty.',
+        variant: 'error',
+      });
       return;
     }
 
     setLoading(true);
     try {
       if (!userId) throw new Error('Not authenticated');
-      const { error } = await ops.createCompany({ name: trimmed, userId });
-      if (error) throw error;
+      const result = await ops.createCompany({ name: trimmed, userId });
+      if (result.error && !result.queued) throw result.error;
       if (!mountedRef.current) return;
       setName('');
-      setFeedbackMessage({ type: 'success', message: 'Company added successfully.' });
+      if (result.queued) {
+        return;
+      }
+      addToast({
+        title: 'Company added',
+        description: `"${trimmed}" is now available for assignments.`,
+      });
       await load();
     } catch (err) {
       console.error('Create failed', err);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Failed to create company: ' + (err.message || JSON.stringify(err)) });
+        addToast({
+          title: 'Create failed',
+          description: `Failed to create company: ${err.message || JSON.stringify(err)}`,
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setLoading(false);
@@ -90,18 +98,6 @@ export default function CompaniesPage() {
       </div>
 
       <div className="max-w-5xl rounded-2xl border border-slate-700/50 bg-slate-800/80 p-8 text-white shadow-xl backdrop-blur">
-        {feedback && (
-          <div
-            className={`mb-6 rounded-lg border px-4 py-3 text-sm transition-opacity duration-300 ${
-              feedback.type === 'error'
-                ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
-            }`}
-          >
-            {feedback.message}
-          </div>
-        )}
-
         <form onSubmit={handleAdd} className="space-y-6">
           <div className="grid gap-4 rounded-xl border border-slate-700/60 bg-slate-900/40 p-6 md:grid-cols-7">
             <div className="md:col-span-5">

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useToast } from '../../components/ToastProvider';
 import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
@@ -26,20 +27,11 @@ export default function AddItem() {
   const [categories, setCategories] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [listLoading, setListLoading] = useState(true);
-  const [feedback, setFeedback] = useState(null);
 
   const mountedRef = useRef(true);
-  const feedbackTimeoutRef = useRef(null);
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-
-  const setFeedbackMessage = useCallback((message) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setFeedback(null);
-    }, 3500);
-  }, []);
+  const { addToast } = useToast();
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -57,12 +49,16 @@ export default function AddItem() {
     } catch (err) {
       console.error('Failed to load categories/companies', err);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to load supporting data. Please retry.' });
+        addToast({
+          title: 'Lookup failed',
+          description: 'Unable to load supporting data. Please retry.',
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setListLoading(false);
     }
-  }, [setFeedbackMessage, userId]);
+  }, [addToast, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -77,7 +73,6 @@ export default function AddItem() {
     }
     return () => {
       mountedRef.current = false;
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
   }, [authLoading, load, userId]);
 
@@ -98,25 +93,39 @@ export default function AddItem() {
       };
 
       if (!payload.name) {
-        setFeedbackMessage({ type: 'error', message: 'Name is required.' });
+        addToast({
+          title: 'Name required',
+          description: 'Name is required.',
+          variant: 'error',
+        });
         return;
       }
 
-      const { error } = await ops.createItem(payload);
-      if (error) throw error;
+      const result = await ops.createItem(payload);
+      if (result.error && !result.queued) throw result.error;
 
       if (!mountedRef.current) return;
-      setFeedbackMessage({ type: 'success', message: 'Item added successfully.' });
       reset();
+      if (result.queued) {
+        return;
+      }
+      addToast({
+        title: 'Item added',
+        description: `"${payload.name}" is now in your inventory.`,
+      });
       await load();
     } catch (err) {
       console.error('Error adding item:', err);
       if (mountedRef.current) {
         const message = err?.message || (err?.error && JSON.stringify(err.error)) || JSON.stringify(err);
-        setFeedbackMessage({ type: 'error', message: 'Error adding item: ' + message });
+        addToast({
+          title: 'Add failed',
+          description: `Error adding item: ${message}`,
+          variant: 'error',
+        });
       }
     }
-  }, [load, reset, setFeedbackMessage, userId]);
+  }, [addToast, load, reset, userId]);
 
   const watchName = watch('name');
   const watchQty = Number(watch('quantity') || 0);
@@ -140,18 +149,6 @@ export default function AddItem() {
       </div>
 
       <div className="max-w-5xl rounded-2xl border border-slate-700/50 bg-slate-800/80 p-8 text-white shadow-xl backdrop-blur">
-        {feedback && (
-          <div
-            className={`mb-6 rounded-lg border px-4 py-3 text-sm transition-opacity duration-300 ${
-              feedback.type === 'error'
-                ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
-            }`}
-          >
-            {feedback.message}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid gap-4 rounded-xl border border-slate-700/60 bg-slate-900/40 p-6 md:grid-cols-2 lg:grid-cols-6">
             <div className="lg:col-span-3">

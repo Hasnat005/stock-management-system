@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '../../components/ToastProvider';
 import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
@@ -9,23 +10,14 @@ export default function StockOutPage() {
   const [rows, setRows] = useState([]); // { item_id, qty, reason }
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState(null);
   const [rowsHighlighted, setRowsHighlighted] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const mountedRef = useRef(true);
-  const feedbackTimeoutRef = useRef(null);
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-
-  const setFeedbackMessage = useCallback((message) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setFeedback(null);
-    }, 3500);
-  }, []);
+  const { addToast } = useToast();
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -46,12 +38,16 @@ export default function StockOutPage() {
     } catch (e) {
       console.error('Failed to load stock-out data', e);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to load stock-out data. Please retry.' });
+        addToast({
+          title: 'Load failed',
+          description: 'Unable to load stock-out data. Please retry.',
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setHistoryLoading(false);
     }
-  }, [setFeedbackMessage, userId]);
+  }, [addToast, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -67,7 +63,6 @@ export default function StockOutPage() {
     }
     return () => {
       mountedRef.current = false;
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
   }, [authLoading, load, userId]);
 
@@ -97,7 +92,10 @@ export default function StockOutPage() {
     }];
     setRows(updated);
     setDraftQty(1);
-    setFeedbackMessage({ type: 'success', message: 'Row added. Review below before committing.' });
+    addToast({
+      title: 'Row queued',
+      description: 'Row added. Review below before committing.',
+    });
   }
 
   function removeRow(idx) {
@@ -111,22 +109,37 @@ export default function StockOutPage() {
     setLoading(true);
     try {
       if (!userId) throw new Error('Not authenticated');
+      let queued = false;
       for (const r of rows) {
         if (!r.item_id || r.qty <= 0) throw new Error('Invalid row');
-        await ops.stockOut({
+        const result = await ops.stockOut({
           itemId: r.item_id,
           companyId: r.company_id || null,
           quantity: parseInt(r.qty, 10),
           reason: r.reason || 'Sale',
           userId,
         });
+        if (result.error && !result.queued) {
+          throw result.error;
+        }
+        if (result.queued) queued = true;
       }
-      setFeedbackMessage({ type: 'success', message: 'Stock-out committed successfully.' });
+      if (!mountedRef.current) return;
       setRows([]);
-      await load();
+      if (!queued) {
+        addToast({
+          title: 'Stock out committed',
+          description: 'Selected rows were applied successfully.',
+        });
+        await load();
+      }
     } catch (err) {
       console.error('Commit failed', err);
-      setFeedbackMessage({ type: 'error', message: 'Commit failed: ' + (err.message || JSON.stringify(err)) });
+      addToast({
+        title: 'Commit failed',
+        description: `Commit failed: ${err.message || JSON.stringify(err)}`,
+        variant: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -162,18 +175,6 @@ export default function StockOutPage() {
       </div>
 
       <div className="max-w-5xl rounded-2xl border border-slate-700/50 bg-slate-800/80 p-8 text-white shadow-xl backdrop-blur">
-        {feedback && (
-          <div
-            className={`mb-6 rounded-lg border px-4 py-3 text-sm transition-opacity duration-300 ${
-              feedback.type === 'error'
-                ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
-            }`}
-          >
-            {feedback.message}
-          </div>
-        )}
-
         <div className="mb-6 grid gap-4 rounded-xl border border-slate-700/60 bg-slate-900/40 p-6 md:grid-cols-2 lg:grid-cols-7">
           <div className="lg:col-span-2">
             <label className="text-xs font-semibold uppercase tracking-wide text-gray-400" htmlFor="stock-item">Item</label>

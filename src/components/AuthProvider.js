@@ -36,8 +36,22 @@ export function AuthProvider({ children }) {
         setLoading(false);
       });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mountedRef.current) return;
+
+      if (event === 'TOKEN_REFRESH_FAILED') {
+        console.warn('[AuthProvider] Refresh token invalid, forcing sign out.');
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.error('[AuthProvider] Failed to clear Supabase session after refresh error.', error);
+        }
+        return;
+      }
+
       setSession(newSession);
       setUser(newSession?.user ?? null);
       setLoading(false);

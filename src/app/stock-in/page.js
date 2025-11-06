@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '../../components/ToastProvider';
 import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
@@ -13,20 +14,11 @@ export default function StockInPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [qty, setQty] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState(null);
 
   const mountedRef = useRef(true);
-  const feedbackTimeoutRef = useRef(null);
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-
-  const setFeedbackMessage = useCallback((message) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setFeedback(null);
-    }, 3500);
-  }, []);
+  const { addToast } = useToast();
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -64,12 +56,16 @@ export default function StockInPage() {
     } catch (err) {
       console.error('Failed to load stock-in data', err);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to load stock-in data. Please retry.' });
+        addToast({
+          title: 'Load failed',
+          description: 'Unable to load stock-in data. Please retry.',
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setHistoryLoading(false);
     }
-  }, [setFeedbackMessage, userId]);
+  }, [addToast, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -85,7 +81,6 @@ export default function StockInPage() {
     }
     return () => {
       mountedRef.current = false;
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
   }, [authLoading, load, userId]);
 
@@ -100,32 +95,50 @@ export default function StockInPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!selectedItem) {
-      setFeedbackMessage({ type: 'error', message: 'Choose an item before recording stock.' });
+      addToast({
+        title: 'Item required',
+        description: 'Choose an item before recording stock.',
+        variant: 'error',
+      });
       return;
     }
     if (qtyInvalid) {
-      setFeedbackMessage({ type: 'error', message: 'Quantity must be greater than zero.' });
+      addToast({
+        title: 'Invalid quantity',
+        description: 'Quantity must be greater than zero.',
+        variant: 'error',
+      });
       return;
     }
 
     setLoading(true);
     try {
       if (!userId) throw new Error('Not authenticated');
-      const { error } = await ops.stockIn({
+      const result = await ops.stockIn({
         itemId: selectedItem,
         companyId: selectedCompany || null,
         quantity: parseInt(qty, 10),
         userId,
       });
-      if (error) throw error;
+      if (result.error && !result.queued) throw result.error;
       if (!mountedRef.current) return;
-      setFeedbackMessage({ type: 'success', message: 'Stock-in recorded successfully.' });
       setQty(1);
+      if (result.queued) {
+        return;
+      }
+      addToast({
+        title: 'Stock in recorded',
+        description: 'Inventory updated successfully.',
+      });
       await load();
     } catch (err) {
       console.error('Stock-in failed', err);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Stock-in failed: ' + (err.message || JSON.stringify(err)) });
+        addToast({
+          title: 'Stock-in failed',
+          description: `Stock-in failed: ${err.message || JSON.stringify(err)}`,
+          variant: 'error',
+        });
       }
     } finally {
       if (mountedRef.current) setLoading(false);
@@ -144,18 +157,6 @@ export default function StockInPage() {
       </div>
 
       <div className="max-w-5xl rounded-2xl border border-slate-700/50 bg-slate-800/80 p-8 text-white shadow-xl backdrop-blur">
-        {feedback && (
-          <div
-            className={`mb-6 rounded-lg border px-4 py-3 text-sm transition-opacity duration-300 ${
-              feedback.type === 'error'
-                ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
-            }`}
-          >
-            {feedback.message}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid gap-4 rounded-xl border border-slate-700/60 bg-slate-900/40 p-6 md:grid-cols-2 lg:grid-cols-6">
             <div className="lg:col-span-3">

@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import Modal from '../../components/Modal';
 import { ArrowUpWideNarrow, Edit, Loader2, Search, Trash2 } from 'lucide-react';
+import Modal from '../../components/Modal';
+import { useToast } from '../../components/ToastProvider';
 import { useAuth } from '../../components/AuthProvider';
+import { supabase } from '../../lib/supabase';
 import ops from '../../lib/supabase_operations';
 
 const priceFormatter = new Intl.NumberFormat(undefined, {
@@ -25,20 +26,12 @@ export default function Inventory() {
   const [editForm, setEditForm] = useState({ name: '', quantity: '', price: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
-  const [feedback, setFeedback] = useState(null);
 
   const mountedRef = useRef(true);
-  const feedbackTimeoutRef = useRef(null);
+  const supabaseWarningShown = useRef(false);
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-
-  const setFeedbackMessage = useCallback((message) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setFeedback(null);
-    }, 3200);
-  }, []);
+  const { addToast } = useToast();
 
   const mapItems = useCallback((data) => (
     (data || []).map((row) => ({
@@ -60,7 +53,15 @@ export default function Inventory() {
       if (!supabase) {
         if (!mountedRef.current) return;
         setItems([]);
-        setFeedbackMessage({ type: 'error', message: 'Supabase is not configured.' });
+        if (!supabaseWarningShown.current) {
+          addToast({
+            title: 'Configuration required',
+            description: 'Supabase is not configured. Add credentials to manage real inventory records.',
+            variant: 'warning',
+            duration: 6000,
+          });
+          supabaseWarningShown.current = true;
+        }
         return;
       }
 
@@ -79,7 +80,11 @@ export default function Inventory() {
       console.error('Error fetching items:', error);
       if (mountedRef.current) {
         setItems([]);
-        setFeedbackMessage({ type: 'error', message: 'Failed to load inventory. Please try again.' });
+        addToast({
+          title: 'Load failed',
+          description: 'Failed to load inventory. Please try again.',
+          variant: 'error',
+        });
       }
     } finally {
       if (!mountedRef.current) return;
@@ -89,7 +94,7 @@ export default function Inventory() {
         setLoading(false);
       }
     }
-  }, [mapItems, setFeedbackMessage, userId]);
+  }, [addToast, mapItems, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -98,7 +103,6 @@ export default function Inventory() {
     }
     return () => {
       mountedRef.current = false;
-      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
   }, [authLoading, fetchItems]);
 
@@ -106,29 +110,47 @@ export default function Inventory() {
     if (!confirm('Are you sure you want to delete this item?')) return;
 
     if (!supabase) {
-      setFeedbackMessage({ type: 'error', message: 'Supabase is not configured.' });
+      addToast({
+        title: 'Configuration required',
+        description: 'Supabase is not configured.',
+        variant: 'error',
+      });
       return;
     }
 
     if (!userId) {
-      setFeedbackMessage({ type: 'error', message: 'You must be signed in to delete items.' });
+      addToast({
+        title: 'Sign-in required',
+        description: 'You must be signed in to delete items.',
+        variant: 'error',
+      });
       return;
     }
 
     try {
       const response = await ops.deleteItem({ id, userId });
-      if (response.error) throw response.error;
+      if (response.error && !response.queued) throw response.error;
 
       if (!mountedRef.current) return;
       setItems((prev) => prev.filter((item) => item.id !== id));
-      setFeedbackMessage({ type: 'success', message: 'Item deleted successfully.' });
+      if (response.queued) {
+        return;
+      }
+      addToast({
+        title: 'Item deleted',
+        description: 'The item has been removed from inventory.',
+      });
     } catch (error) {
       console.error('Error deleting item:', error);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to delete item. Please retry.' });
+        addToast({
+          title: 'Delete failed',
+          description: 'Unable to delete item. Please retry.',
+          variant: 'error',
+        });
       }
     }
-  }, [setFeedbackMessage, userId]);
+  }, [addToast, userId]);
 
   const openEditModal = useCallback((item) => {
     setEditingItem(item);
@@ -144,12 +166,20 @@ export default function Inventory() {
     if (!editingItem) return;
 
     if (!supabase) {
-      setFeedbackMessage({ type: 'error', message: 'Supabase is not configured.' });
+      addToast({
+        title: 'Configuration required',
+        description: 'Supabase is not configured.',
+        variant: 'error',
+      });
       return;
     }
 
     if (!userId) {
-      setFeedbackMessage({ type: 'error', message: 'You must be signed in to update items.' });
+      addToast({
+        title: 'Sign-in required',
+        description: 'You must be signed in to update items.',
+        variant: 'error',
+      });
       return;
     }
 
@@ -166,7 +196,7 @@ export default function Inventory() {
           price,
         },
       });
-      if (response.error) throw response.error;
+      if (response.error && !response.queued) throw response.error;
 
       if (!mountedRef.current) return;
       setItems((prev) => prev.map((item) => (
@@ -174,15 +204,24 @@ export default function Inventory() {
           ? { ...item, name: editForm.name.trim(), quantity, price }
           : item
       )));
-      setFeedbackMessage({ type: 'success', message: 'Item updated successfully.' });
+      if (!response.queued) {
+        addToast({
+          title: 'Item updated',
+          description: 'Changes saved successfully.',
+        });
+      }
       closeEditModal();
     } catch (error) {
       console.error('Error updating item:', error);
       if (mountedRef.current) {
-        setFeedbackMessage({ type: 'error', message: 'Unable to update item. Please retry.' });
+        addToast({
+          title: 'Update failed',
+          description: 'Unable to update item. Please retry.',
+          variant: 'error',
+        });
       }
     }
-  }, [closeEditModal, editForm.name, editForm.price, editForm.quantity, editingItem, setFeedbackMessage, userId]);
+  }, [addToast, closeEditModal, editForm.name, editForm.price, editForm.quantity, editingItem, userId]);
 
   const filteredItems = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
@@ -217,18 +256,6 @@ export default function Inventory() {
         <h1 className="text-4xl font-bold text-white tracking-tight">Inventory</h1>
         <div className="mt-2 w-24 border-b-2 border-blue-500" />
       </div>
-
-      {feedback && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm text-white shadow transition ${
-            feedback.type === 'error'
-              ? 'border-red-500/40 bg-red-500/15 text-red-200'
-              : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
-          }`}
-        >
-          {feedback.message}
-        </div>
-      )}
 
       {!supabase && (
         <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
