@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
 export default function CategoriesPage() {
@@ -15,6 +16,8 @@ export default function CategoriesPage() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -25,9 +28,10 @@ export default function CategoriesPage() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
       setListLoading(true);
-      const { data, error } = await ops.listCategories();
+      const { data, error } = await ops.listCategories({ userId });
       if (error) throw error;
       if (!mountedRef.current) return;
       setCategories(data || []);
@@ -39,16 +43,18 @@ export default function CategoriesPage() {
     } finally {
       if (mountedRef.current) setListLoading(false);
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!authLoading) {
+      load();
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [load]);
+  }, [authLoading, load]);
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -60,7 +66,8 @@ export default function CategoriesPage() {
 
     setCreating(true);
     try {
-      const { error } = await ops.createCategory(trimmed);
+      if (!userId) throw new Error('Not authenticated');
+      const { error } = await ops.createCategory({ name: trimmed, userId });
       if (error) throw error;
       if (!mountedRef.current) return;
       setName('');
@@ -96,7 +103,8 @@ export default function CategoriesPage() {
 
     setSavingId(editingId);
     try {
-      const { error } = await ops.updateCategory(editingId, trimmed);
+      if (!userId) throw new Error('Not authenticated');
+      const { error } = await ops.updateCategory({ id: editingId, name: trimmed, userId });
       if (error) throw error;
       if (!mountedRef.current) return;
       cancelEdit();

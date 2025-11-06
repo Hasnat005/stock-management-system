@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
 export default function StockInPage() {
@@ -16,6 +17,8 @@ export default function StockInPage() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -26,12 +29,13 @@ export default function StockInPage() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
       setHistoryLoading(true);
       const [itemsRes, companiesRes, historyRes] = await Promise.all([
-        ops.listItems(),
-        ops.listCompanies(),
-        ops.listRecentStockMovements({ type: 'IN', limit: 10 }),
+        ops.listItems({ userId }),
+        ops.listCompanies({ userId }),
+        ops.listRecentStockMovements({ type: 'IN', limit: 10, userId }),
       ]);
 
       if (itemsRes.error) throw itemsRes.error;
@@ -65,16 +69,25 @@ export default function StockInPage() {
     } finally {
       if (mountedRef.current) setHistoryLoading(false);
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!authLoading) {
+      if (userId) {
+        load();
+      } else {
+        setHistoryLoading(false);
+        setItems([]);
+        setCompanies([]);
+        setHistory([]);
+      }
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [load]);
+  }, [authLoading, load, userId]);
 
   const movementDate = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -97,7 +110,13 @@ export default function StockInPage() {
 
     setLoading(true);
     try {
-      const { error } = await ops.stockIn(selectedItem, selectedCompany || null, parseInt(qty, 10));
+      if (!userId) throw new Error('Not authenticated');
+      const { error } = await ops.stockIn({
+        itemId: selectedItem,
+        companyId: selectedCompany || null,
+        quantity: parseInt(qty, 10),
+        userId,
+      });
       if (error) throw error;
       if (!mountedRef.current) return;
       setFeedbackMessage({ type: 'success', message: 'Stock-in recorded successfully.' });

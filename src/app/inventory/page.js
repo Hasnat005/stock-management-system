@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import Modal from '../../components/Modal';
 import { ArrowUpWideNarrow, Edit, Loader2, Search, Trash2 } from 'lucide-react';
+import { useAuth } from '../../components/AuthProvider';
+import ops from '../../lib/supabase_operations';
 
 const priceFormatter = new Intl.NumberFormat(undefined, {
   style: 'currency',
@@ -27,6 +29,8 @@ export default function Inventory() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -53,11 +57,20 @@ export default function Inventory() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('items')
-        .select('id,name,available_quantity,price,date_added,category:categories(name),company:companies(name)')
-        .order('date_added', { ascending: false });
+      if (!supabase) {
+        if (!mountedRef.current) return;
+        setItems([]);
+        setFeedbackMessage({ type: 'error', message: 'Supabase is not configured.' });
+        return;
+      }
 
+      if (!userId) {
+        if (!mountedRef.current) return;
+        setItems([]);
+        return;
+      }
+
+      const { data, error } = await ops.listItems({ userId });
       if (error) throw error;
 
       if (!mountedRef.current) return;
@@ -76,16 +89,18 @@ export default function Inventory() {
         setLoading(false);
       }
     }
-  }, [mapItems, setFeedbackMessage]);
+  }, [mapItems, setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchItems();
+    if (!authLoading) {
+      fetchItems();
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [fetchItems]);
+  }, [authLoading, fetchItems]);
 
   const deleteItem = useCallback(async (id) => {
     if (!confirm('Are you sure you want to delete this item?')) return;
@@ -95,13 +110,14 @@ export default function Inventory() {
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('items')
-        .delete()
-        .eq('id', id);
+    if (!userId) {
+      setFeedbackMessage({ type: 'error', message: 'You must be signed in to delete items.' });
+      return;
+    }
 
-      if (error) throw error;
+    try {
+      const response = await ops.deleteItem({ id, userId });
+      if (response.error) throw response.error;
 
       if (!mountedRef.current) return;
       setItems((prev) => prev.filter((item) => item.id !== id));
@@ -112,7 +128,7 @@ export default function Inventory() {
         setFeedbackMessage({ type: 'error', message: 'Unable to delete item. Please retry.' });
       }
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   const openEditModal = useCallback((item) => {
     setEditingItem(item);
@@ -132,20 +148,25 @@ export default function Inventory() {
       return;
     }
 
+    if (!userId) {
+      setFeedbackMessage({ type: 'error', message: 'You must be signed in to update items.' });
+      return;
+    }
+
     try {
       const quantity = Number.isFinite(Number(editForm.quantity)) ? parseInt(editForm.quantity, 10) : 0;
       const price = Number.isFinite(Number(editForm.price)) ? parseFloat(editForm.price) : 0;
 
-      const { error } = await supabase
-        .from('items')
-        .update({
+      const response = await ops.updateItem({
+        id: editingItem.id,
+        userId,
+        changes: {
           name: editForm.name.trim(),
           available_quantity: quantity,
           price,
-        })
-        .eq('id', editingItem.id);
-
-      if (error) throw error;
+        },
+      });
+      if (response.error) throw response.error;
 
       if (!mountedRef.current) return;
       setItems((prev) => prev.map((item) => (
@@ -161,7 +182,7 @@ export default function Inventory() {
         setFeedbackMessage({ type: 'error', message: 'Unable to update item. Please retry.' });
       }
     }
-  }, [closeEditModal, editForm.name, editForm.price, editForm.quantity, editingItem, setFeedbackMessage]);
+  }, [closeEditModal, editForm.name, editForm.price, editForm.quantity, editingItem, setFeedbackMessage, userId]);
 
   const filteredItems = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();

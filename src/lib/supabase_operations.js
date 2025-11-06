@@ -4,75 +4,243 @@ async function ensureClient() {
   if (!supabase) throw new Error('Supabase client is not configured. Check your .env.local');
 }
 
-export async function listCategories() {
-  await ensureClient();
-  return supabase.from('categories').select('id,name').order('name', { ascending: true });
+function assertUserId(userId) {
+  if (!userId) {
+    throw new Error('User context is required for this operation.');
+  }
+  return userId;
 }
 
-export async function createCategory(name) {
-  await ensureClient();
-  return supabase.from('categories').insert([{ name }]);
+function isMissingUserColumn(error) {
+  if (!error) return false;
+  const message = String(error.message || '');
+  return error.code === '42703' || message.includes('user_id');
 }
 
-export async function updateCategory(id, name) {
+export async function listCategories({ userId }) {
   await ensureClient();
-  return supabase.from('categories').update({ name }).eq('id', id);
+  assertUserId(userId);
+  const base = () => supabase
+    .from('categories')
+    .select('id,name')
+    .eq('user_id', userId)
+    .order('name', { ascending: true });
+
+  const fallback = () => supabase
+    .from('categories')
+    .select('id,name')
+    .order('name', { ascending: true });
+
+  const response = await base();
+  if (response.error && isMissingUserColumn(response.error)) {
+    return fallback();
+  }
+  return response;
 }
 
-export async function listCompanies() {
+export async function createCategory({ name, userId }) {
   await ensureClient();
-  return supabase.from('companies').select('id,name').order('name', { ascending: true });
+  assertUserId(userId);
+  const response = await supabase.from('categories').insert([{ name, user_id: userId }]);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return supabase.from('categories').insert([{ name }]);
+  }
+  return response;
 }
 
-export async function createCompany(name) {
+export async function updateCategory({ id, name, userId }) {
   await ensureClient();
-  return supabase.from('companies').insert([{ name }]);
+  assertUserId(userId);
+  const response = await supabase.from('categories').update({ name }).eq('id', id).eq('user_id', userId);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return supabase.from('categories').update({ name }).eq('id', id);
+  }
+  return response;
 }
 
-export async function listItems(filters = {}) {
+export async function listCompanies({ userId }) {
   await ensureClient();
-  // include related category and company names
-  const q = supabase
+  assertUserId(userId);
+  const base = () => supabase
+    .from('companies')
+    .select('id,name')
+    .eq('user_id', userId)
+    .order('name', { ascending: true });
+
+  const fallback = () => supabase
+    .from('companies')
+    .select('id,name')
+    .order('name', { ascending: true });
+
+  const response = await base();
+  if (response.error && isMissingUserColumn(response.error)) {
+    return fallback();
+  }
+  return response;
+}
+
+export async function createCompany({ name, userId }) {
+  await ensureClient();
+  assertUserId(userId);
+  const response = await supabase.from('companies').insert([{ name, user_id: userId }]);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return supabase.from('companies').insert([{ name }]);
+  }
+  return response;
+}
+
+export async function listItems({ userId, filters = {} } = {}) {
+  await ensureClient();
+  assertUserId(userId);
+
+  const buildQuery = (includeUser) => {
+    let query = supabase
+      .from('items')
+      .select('id,name,available_quantity,price,date_added,reorder_level,category:categories(name),company:companies(name)')
+      .order('date_added', { ascending: false });
+
+    if (includeUser) query = query.eq('user_id', userId);
+    if (filters.category_id) query = query.eq('category_id', filters.category_id);
+    if (filters.company_id) query = query.eq('company_id', filters.company_id);
+    if (filters.search) query = query.ilike('name', `%${filters.search}%`);
+    return query;
+  };
+
+  const response = await buildQuery(true);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return buildQuery(false);
+  }
+  return response;
+}
+
+export async function createItem({ name, quantity, price, category_id, company_id, reorder_level = 0, userId }) {
+  await ensureClient();
+  assertUserId(userId);
+  const basePayload = {
+    name,
+    available_quantity: quantity,
+    price,
+    category_id,
+    company_id,
+    reorder_level,
+    user_id: userId,
+  };
+
+  const response = await supabase.from('items').insert([
+    {
+      ...basePayload,
+    },
+  ]);
+  if (response.error && isMissingUserColumn(response.error)) {
+    const { user_id, ...fallbackPayload } = basePayload;
+    return supabase.from('items').insert([fallbackPayload]);
+  }
+  return response;
+}
+
+export async function updateItem({ id, changes, userId }) {
+  await ensureClient();
+  assertUserId(userId);
+
+  const payload = { ...changes };
+  const response = await supabase
     .from('items')
-    .select('id,name,available_quantity,price,date_added,reorder_level,category:categories(name),company:companies(name)')
-    .order('date_added', { ascending: false });
+    .update(payload)
+    .eq('id', id)
+    .eq('user_id', userId);
 
-  if (filters.category_id) q.eq('category_id', filters.category_id);
-  if (filters.company_id) q.eq('company_id', filters.company_id);
-  if (filters.search) q.ilike('name', `%${filters.search}%`);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return supabase.from('items').update(payload).eq('id', id);
+  }
 
-  return q;
+  return response;
 }
 
-export async function createItem({ name, quantity, price, category_id, company_id, reorder_level = 0 }) {
+export async function deleteItem({ id, userId }) {
   await ensureClient();
-  return supabase.from('items').insert([{ name, available_quantity: quantity, price, category_id, company_id, reorder_level }]);
+  assertUserId(userId);
+
+  const response = await supabase
+    .from('items')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+
+  if (response.error && isMissingUserColumn(response.error)) {
+    return supabase.from('items').delete().eq('id', id);
+  }
+
+  return response;
 }
 
-export async function stockIn(item_id, company_id, qty) {
+export async function stockIn({ itemId, companyId, quantity, userId }) {
   await ensureClient();
-  return supabase.rpc('stock_in', { p_item: item_id, p_company: company_id, p_qty: qty });
+  assertUserId(userId);
+  const result = await supabase.rpc('stock_in', {
+    p_item: itemId,
+    p_company: companyId,
+    p_qty: quantity,
+    p_user: userId,
+  });
+  if (result.error && /p_user/i.test(result.error.message || '')) {
+    return supabase.rpc('stock_in', {
+      p_item: itemId,
+      p_company: companyId,
+      p_qty: quantity,
+    });
+  }
+  return result;
 }
 
-export async function stockOut(item_id, company_id, qty, reason) {
+export async function stockOut({ itemId, companyId, quantity, reason, userId }) {
   await ensureClient();
-  return supabase.rpc('stock_out', { p_item: item_id, p_company: company_id, p_qty: qty, p_reason: reason });
+  assertUserId(userId);
+  const result = await supabase.rpc('stock_out', {
+    p_item: itemId,
+    p_company: companyId,
+    p_qty: quantity,
+    p_reason: reason,
+    p_user: userId,
+  });
+  if (result.error && /p_user/i.test(result.error.message || '')) {
+    return supabase.rpc('stock_out', {
+      p_item: itemId,
+      p_company: companyId,
+      p_qty: quantity,
+      p_reason: reason,
+    });
+  }
+  return result;
 }
 
-export async function listRecentStockMovements({ type = 'OUT', limit = 10 } = {}) {
+export async function listRecentStockMovements({ type = 'OUT', limit = 10, userId } = {}) {
   await ensureClient();
-  return supabase
-    .from('stock_movements')
-    .select('id,movement_type,quantity,reason,created_at,item:items(name),company:companies(name)')
-    .eq('movement_type', type)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  assertUserId(userId);
+  const buildQuery = (includeUser) => {
+    let query = supabase
+      .from('stock_movements')
+      .select('id,movement_type,quantity,reason,created_at,item:items(name),company:companies(name)')
+      .eq('movement_type', type)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (includeUser) query = query.eq('user_id', userId);
+    return query;
+  };
+
+  const response = await buildQuery(true);
+  if (response.error && isMissingUserColumn(response.error)) {
+    return buildQuery(false);
+  }
+  return response;
 }
 
-export async function getSalesBetweenDates(fromIso, toIso) {
+export async function getSalesBetweenDates({ fromIso, toIso, userId }) {
   await ensureClient();
-  // fetch stock_movements of type OUT with related item names
-  const { data, error } = await supabase
+  assertUserId(userId);
+
+  const runQuery = (includeUser) => {
+    let query = supabase
     .from('stock_movements')
     .select('id,item_id,quantity,created_at,item:items(name)')
     .eq('movement_type', 'OUT')
@@ -80,9 +248,18 @@ export async function getSalesBetweenDates(fromIso, toIso) {
     .lte('created_at', toIso)
     .order('created_at', { ascending: true });
 
-  if (error) throw error;
+    if (includeUser) query = query.eq('user_id', userId);
+    return query;
+  };
 
-  // aggregate by item
+  let response = await runQuery(true);
+  if (response.error && isMissingUserColumn(response.error)) {
+    response = await runQuery(false);
+  }
+  if (response.error) throw response.error;
+
+  const { data } = response;
+
   const agg = {};
   (data || []).forEach((row) => {
     const id = row.item_id;
@@ -102,6 +279,8 @@ const ops = {
   createCompany,
   listItems,
   createItem,
+  updateItem,
+  deleteItem,
   stockIn,
   stockOut,
   listRecentStockMovements,

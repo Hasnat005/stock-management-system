@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
 export default function AddItem() {
@@ -29,6 +30,8 @@ export default function AddItem() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -39,11 +42,12 @@ export default function AddItem() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
       setListLoading(true);
       const [{ data: catData, error: catError }, { data: compData, error: compError }] = await Promise.all([
-        ops.listCategories(),
-        ops.listCompanies(),
+        ops.listCategories({ userId }),
+        ops.listCompanies({ userId }),
       ]);
       if (catError) throw catError;
       if (compError) throw compError;
@@ -58,19 +62,28 @@ export default function AddItem() {
     } finally {
       if (mountedRef.current) setListLoading(false);
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!authLoading) {
+      if (userId) {
+        load();
+      } else {
+        setListLoading(false);
+        setCategories([]);
+        setCompanies([]);
+      }
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [load]);
+  }, [authLoading, load, userId]);
 
   const onSubmit = useCallback(async (data) => {
     try {
+      if (!userId) throw new Error('Not authenticated');
       const quantity = Number.isFinite(data.quantity) && data.quantity >= 0 ? data.quantity : 0;
       const reorderLevel = Number.isFinite(data.reorder_level) && data.reorder_level >= 0 ? data.reorder_level : 0;
 
@@ -81,6 +94,7 @@ export default function AddItem() {
         category_id: data.category_id || null,
         company_id: data.company_id || null,
         reorder_level: reorderLevel,
+        userId,
       };
 
       if (!payload.name) {
@@ -102,7 +116,7 @@ export default function AddItem() {
         setFeedbackMessage({ type: 'error', message: 'Error adding item: ' + message });
       }
     }
-  }, [load, reset, setFeedbackMessage]);
+  }, [load, reset, setFeedbackMessage, userId]);
 
   const watchName = watch('name');
   const watchQty = Number(watch('quantity') || 0);

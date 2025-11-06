@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
 export default function CompaniesPage() {
@@ -12,6 +13,8 @@ export default function CompaniesPage() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -22,9 +25,10 @@ export default function CompaniesPage() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
       setListLoading(true);
-      const { data, error } = await ops.listCompanies();
+      const { data, error } = await ops.listCompanies({ userId });
       if (error) throw error;
       if (!mountedRef.current) return;
       setCompanies(data || []);
@@ -36,16 +40,18 @@ export default function CompaniesPage() {
     } finally {
       if (mountedRef.current) setListLoading(false);
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!authLoading) {
+      load();
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [load]);
+  }, [authLoading, load]);
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -57,7 +63,8 @@ export default function CompaniesPage() {
 
     setLoading(true);
     try {
-      const { error } = await ops.createCompany(trimmed);
+      if (!userId) throw new Error('Not authenticated');
+      const { error } = await ops.createCompany({ name: trimmed, userId });
       if (error) throw error;
       if (!mountedRef.current) return;
       setName('');

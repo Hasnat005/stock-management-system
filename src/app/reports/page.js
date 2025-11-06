@@ -29,6 +29,8 @@ import {
   Search,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { listItems } from '../../lib/supabase_operations';
+import { useAuth } from '../../components/AuthProvider';
 
 ChartJS.register(
   CategoryScale,
@@ -153,6 +155,8 @@ export default function Reports() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -192,6 +196,15 @@ export default function Reports() {
       return;
     }
 
+    if (!userId) {
+      if (!mountedRef.current) return;
+      setItems([]);
+      setGeneratedAt(new Date());
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     if (silent) {
       setRefreshing(true);
     } else {
@@ -199,18 +212,14 @@ export default function Reports() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('items')
-        .select('id,name,available_quantity,price,date_added,category:categories(name),company:companies(name)')
-        .order('date_added', { ascending: false });
-
+      const { data, error } = await listItems({ userId });
       if (error) throw error;
       if (!mountedRef.current) return;
 
       setItems(mapRows(data));
       setGeneratedAt(new Date());
     } catch (err) {
-      console.error('Error fetching items:', err);
+      console.error('Error fetching items:', err?.message || err);
       if (mountedRef.current) {
         setFeedbackMessage({ type: 'error', message: 'Failed to load report data. Using fallback values.' });
         hydrateMock();
@@ -223,16 +232,18 @@ export default function Reports() {
         setLoading(false);
       }
     }
-  }, [hydrateMock, mapRows, setFeedbackMessage]);
+  }, [hydrateMock, mapRows, setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchItems();
+    if (!authLoading) {
+      fetchItems();
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [fetchItems]);
+  }, [authLoading, fetchItems]);
 
   const categories = useMemo(() => {
     const set = new Set(items.map((item) => item.category));

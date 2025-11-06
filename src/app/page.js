@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Boxes, Loader2, PackageSearch } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../components/AuthProvider';
+import ops from '../lib/supabase_operations';
 
 const currencyFormatter = new Intl.NumberFormat(undefined, {
   style: 'currency',
@@ -46,6 +48,8 @@ export default function Dashboard() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -87,6 +91,19 @@ export default function Dashboard() {
       return;
     }
 
+    if (!userId) {
+      if (mountedRef.current) {
+        setItems([]);
+        setStats({ totalItems: 0, lowStockItems: 0, totalValue: 0 });
+      }
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (silent) {
       setRefreshing(true);
     } else {
@@ -94,11 +111,7 @@ export default function Dashboard() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('items')
-        .select('id,name,available_quantity,price,date_added,category:categories(name)')
-        .order('date_added', { ascending: false });
-
+      const { data, error } = await ops.listItems({ userId });
       if (error) throw error;
       if (!mountedRef.current) return;
 
@@ -120,16 +133,18 @@ export default function Dashboard() {
         setLoading(false);
       }
     }
-  }, [computeStats, hydrateMock, mapRows, setFeedbackMessage]);
+  }, [computeStats, hydrateMock, mapRows, setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchStats();
+    if (!authLoading) {
+      fetchStats();
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [fetchStats]);
+  }, [authLoading, fetchStats]);
 
   const lowStock = useMemo(() => items.filter((row) => row.quantity < 10).slice(0, 5), [items]);
   const recentlyAdded = useMemo(() => items.slice(0, 5), [items]);

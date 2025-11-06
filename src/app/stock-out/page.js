@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../components/AuthProvider';
 import ops from '../../lib/supabase_operations';
 
 export default function StockOutPage() {
@@ -15,6 +16,8 @@ export default function StockOutPage() {
 
   const mountedRef = useRef(true);
   const feedbackTimeoutRef = useRef(null);
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
 
   const setFeedbackMessage = useCallback((message) => {
     setFeedback(message);
@@ -25,12 +28,13 @@ export default function StockOutPage() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!userId) return;
     try {
       setHistoryLoading(true);
       const [itemsRes, companiesRes, historyRes] = await Promise.all([
-        ops.listItems(),
-        ops.listCompanies(),
-        ops.listRecentStockMovements({ type: 'OUT', limit: 10 }),
+        ops.listItems({ userId }),
+        ops.listCompanies({ userId }),
+        ops.listRecentStockMovements({ type: 'OUT', limit: 10, userId }),
       ]);
       if (itemsRes.error) throw itemsRes.error;
       if (companiesRes.error) throw companiesRes.error;
@@ -47,16 +51,25 @@ export default function StockOutPage() {
     } finally {
       if (mountedRef.current) setHistoryLoading(false);
     }
-  }, [setFeedbackMessage]);
+  }, [setFeedbackMessage, userId]);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!authLoading) {
+      if (userId) {
+        load();
+      } else {
+        setHistoryLoading(false);
+        setItems([]);
+        setCompanies([]);
+        setHistory([]);
+      }
+    }
     return () => {
       mountedRef.current = false;
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     };
-  }, [load]);
+  }, [authLoading, load, userId]);
 
   // temporary inputs for the "Add to grid" form
   const [draftItem, setDraftItem] = useState('');
@@ -97,10 +110,16 @@ export default function StockOutPage() {
     if (rows.length === 0) return;
     setLoading(true);
     try {
+      if (!userId) throw new Error('Not authenticated');
       for (const r of rows) {
         if (!r.item_id || r.qty <= 0) throw new Error('Invalid row');
-        // ensure qty is a number
-        await ops.stockOut(r.item_id, r.company_id || null, parseInt(r.qty, 10), r.reason || 'Sale');
+        await ops.stockOut({
+          itemId: r.item_id,
+          companyId: r.company_id || null,
+          quantity: parseInt(r.qty, 10),
+          reason: r.reason || 'Sale',
+          userId,
+        });
       }
       setFeedbackMessage({ type: 'success', message: 'Stock-out committed successfully.' });
       setRows([]);
