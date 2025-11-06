@@ -155,17 +155,17 @@ export default function Dashboard() {
   }, [fetchStats]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="min-w-0 space-y-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-white tracking-tight">Dashboard</h1>
+          <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl">Dashboard</h1>
           <div className="mt-2 w-24 border-b-2 border-blue-500" />
         </div>
         <button
           type="button"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-blue-500 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-4 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-blue-500 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
         >
           {refreshing && <Loader2 className="h-4 w-4 animate-spin" />}
           {refreshing ? 'Refreshing' : 'Refresh data'}
@@ -200,12 +200,12 @@ export default function Dashboard() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-2xl border border-blue-500/40 bg-blue-500/10 p-6 text-white shadow-lg backdrop-blur">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wide text-blue-200/80">Total items</p>
-                <p className="mt-3 text-4xl font-semibold text-white">{stats.totalItems}</p>
+                <p className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{stats.totalItems}</p>
               </div>
               <div className="rounded-xl bg-blue-500/30 p-3 text-white">
                 <Boxes className="h-6 w-6" />
@@ -218,7 +218,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wide text-amber-200/80">Low stock items</p>
-                <p className="mt-3 text-4xl font-semibold text-white">{stats.lowStockItems}</p>
+                <p className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{stats.lowStockItems}</p>
               </div>
               <div className="rounded-xl bg-amber-500/25 p-3 text-white">
                 <AlertTriangle className="h-6 w-6" />
@@ -231,7 +231,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wide text-emerald-200/80">Inventory value</p>
-                <p className="mt-3 text-4xl font-semibold text-white">{currencyFormatter.format(stats.totalValue)}</p>
+                <p className="mt-3 text-3xl font-semibold text-white sm:text-4xl">{currencyFormatter.format(stats.totalValue)}</p>
               </div>
               <div className="rounded-xl bg-emerald-500/25 p-3 text-white">
                 <PackageSearch className="h-6 w-6" />
@@ -244,7 +244,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-700/60 bg-slate-900/40 p-6 text-white shadow-xl">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">Items nearing reorder</h2>
               <p className="text-sm text-slate-400">Keep an eye on low stock before it impacts sales.</p>
@@ -265,7 +265,7 @@ export default function Dashboard() {
               lowStock.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-800/60 bg-slate-900/50 px-4 py-3"
+                  className="flex flex-col gap-3 rounded-xl border border-slate-800/60 bg-slate-900/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-semibold text-white">{item.name}</p>
@@ -299,7 +299,7 @@ export default function Dashboard() {
                 recentlyAdded.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-4 rounded-xl border border-slate-800/60 bg-slate-900/50 px-4 py-3"
+                    className="flex flex-col gap-3 rounded-xl border border-slate-800/60 bg-slate-900/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-semibold text-white">{item.name}</p>
